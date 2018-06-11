@@ -6,17 +6,20 @@ import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.io.LongWritable;
 import org.apache.hadoop.io.Text;
-import org.apache.hadoop.io.Writable;
 import org.apache.hadoop.mapreduce.Job;
 import org.apache.hadoop.mapreduce.Mapper;
 import org.apache.hadoop.mapreduce.Reducer;
 import org.apache.hadoop.mapreduce.lib.input.FileInputFormat;
 import org.apache.hadoop.mapreduce.lib.input.TextInputFormat;
 import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
+import org.apache.hadoop.mapreduce.lib.output.MultipleOutputs;
 import org.apache.hadoop.mapreduce.lib.output.SequenceFileOutputFormat;
 import org.apache.hadoop.mapreduce.lib.output.TextOutputFormat;
 
-public class WordCount {
+public class MultipleOutputWordCount {
+  public static final String ZERO_OUT = "zero";
+  public static final String ONE_OUT = "one";
+
   public static class WordCountMapper extends Mapper<Object, Text, Text, LongWritable>{
     private static final LongWritable ONE = new LongWritable(1);
     private Text word = new Text();
@@ -31,8 +34,13 @@ public class WordCount {
     }
   }
 
-  public static class WordCountReducer extends Reducer<Text, LongWritable, Text, Writable> {
+  public static class WordCountReducer extends Reducer<Text, LongWritable, Text, LongWritable> {
+    private MultipleOutputs mos;
     private LongWritable result = new LongWritable();
+
+    public void setup(Context context) throws IOException, InterruptedException {
+      mos = new MultipleOutputs(context);
+    }
 
     public void reduce(Text key, Iterable<LongWritable> values, Context context)
         throws IOException, InterruptedException {
@@ -42,6 +50,11 @@ public class WordCount {
       }
       result.set(sum);
       context.write(key, result);
+      if ((key.toString().hashCode() & 0x1) == 0) {
+        mos.write(ZERO_OUT, key, result);
+      } else {
+        mos.write(ONE_OUT, key, result);
+      }
     }
   }
 
@@ -52,17 +65,20 @@ public class WordCount {
     }
     Configuration conf = new Configuration();
     Job job = Job.getInstance(conf, "word count");
-    job.setJarByClass(WordCount.class);
+    job.setJarByClass(MultipleOutputWordCount.class);
     job.setMapperClass(WordCountMapper.class);
     job.setReducerClass(WordCountReducer.class);
-    job.setMapOutputKeyClass(Text.class);
-    job.setMapOutputValueClass(LongWritable.class);
     job.setOutputKeyClass(Text.class);
-    job.setOutputValueClass(Writable.class);
+    job.setOutputValueClass(LongWritable.class);
     job.setInputFormatClass(TextInputFormat.class);
     FileInputFormat.addInputPath(job, new Path(args[0]));
-    job.setOutputFormatClass(SequenceFileOutputFormat.class);
+    job.setOutputFormatClass(TextOutputFormat.class);
     FileOutputFormat.setOutputPath(job, new Path(args[1]));
+
+    MultipleOutputs.addNamedOutput(job, ZERO_OUT, TextOutputFormat.class,
+        Text.class, LongWritable.class);
+    MultipleOutputs.addNamedOutput(job, ONE_OUT, SequenceFileOutputFormat.class,
+        String.class, LongWritable.class);
 
     System.exit(job.waitForCompletion(true) ? 0 : 1);
   }
