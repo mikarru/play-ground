@@ -25,7 +25,7 @@ public class UserServiceImpl implements TUserService.Iface {
 
     public TUser findUserById(long userId) throws TUserNotFoundException, org.apache.thrift.TException {
         TUser user = store.get(userId);
-        if (store == null) {
+        if (user == null) {
             throw new TUserNotFoundException("User not found: userId=" + userId);
         }
         return user;
